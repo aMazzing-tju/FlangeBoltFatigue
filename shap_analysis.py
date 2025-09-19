@@ -7,7 +7,7 @@ import joblib
 from train_model import CNNTransformerWithPE
 
 # ======================
-# 加载模型 & 数据
+# Load model & data
 # ======================
 scaler_X = joblib.load("scaler_X.pkl")
 X_scaled = np.load("X_scaled.npy")
@@ -17,7 +17,7 @@ model.load_state_dict(torch.load("best_1dcnn_model.pth", weights_only=True))
 model.eval()
 
 # ======================
-# SHAP 分析
+# SHAP analysis
 # ======================
 sample_X = X_scaled[:150]
 
@@ -27,22 +27,26 @@ def shap_predict(input_array):
         output = model(input_tensor).numpy()
     return output
 
+# Background dataset for KernelSHAP
 background = X_scaled[np.random.choice(X_scaled.shape[0], 20, replace=False)]
 explainer = shap.KernelExplainer(shap_predict, background)
 shap_values = explainer.shap_values(sample_X)
 
+# Feature names and preprocessing
 feature_names = np.array([f"Load_{i+1}" for i in range(sample_X.shape[1])])
 shap_values = np.array(shap_values).squeeze(-1)
-shap_values = np.roll(shap_values, shift=-1, axis=1)  # 左移特征顺序
+shap_values = np.roll(shap_values, shift=-1, axis=1)  # Shift feature order left
 
 # ======================
-# 平均 SHAP 柱状图
+# Mean SHAP bar plot
 # ======================
 mean_abs_shap = np.abs(shap_values).mean(axis=0).flatten()
 
 plt.figure(figsize=(9, 7))
 bars = plt.bar(feature_names, mean_abs_shap, color="blue")
 plt.ylabel("Mean SHAP value", fontsize=20)
+
+# Add numeric labels above bars
 for bar in bars:
     height = bar.get_height()
     plt.text(bar.get_x() + bar.get_width()/2, height + 0.001,
@@ -56,7 +60,7 @@ plt.savefig("SHAP_Bar.png", dpi=600)
 plt.show()
 
 # ======================
-# SHAP 分布图
+# SHAP summary plot
 # ======================
 plt.figure(figsize=(8, 6))
 shap.summary_plot(shap_values, sample_X, feature_names=feature_names, show=False)
