@@ -30,8 +30,8 @@ project/
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/your-username/flangeboltfatigue.git
-cd flange-bolt-fatigue
+git clone https://github.com/aMazzing-tju/FlangeBoltFatigue.git
+cd FlangeBoltFatigue
 pip install -r requirements.txt
 ```
 
@@ -66,13 +66,4 @@ python correlation_heatmap.py
 ```
 This will:
 - Compute Pearson correlations among bolt loads
-- Generate `Bubble_Correlation_Boxed.png` (bubble heatmap)
-
----
-
-## 📊 Results
-
-Key results reproduced from the paper:
-- **Prediction accuracy** (R², RMSE, MAPE)
-- **SHAP plots** showing feature importance and effect directionality
-- **Correlation bubble heatmap** illustrating input independence
+- Generate `Bubble_Correlation.png` (bubble heatmap)
