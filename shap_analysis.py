@@ -35,13 +35,23 @@ shap_values = explainer.shap_values(sample_X)
 # Feature names and preprocessing
 feature_names = np.array([f"Load_{i+1}" for i in range(sample_X.shape[1])])
 shap_values = np.array(shap_values).squeeze(-1)
-shap_values = np.roll(shap_values, shift=-1, axis=1)  # Shift feature order left
+feature_names = np.roll(feature_names, shift=1)
+
+# ======================
+# SHAP summary plot
+# ======================
+plt.figure(figsize=(8, 6))
+shap.summary_plot(shap_values, sample_X, feature_names=feature_names, show=False)
+plt.tick_params(axis="x", width=1.5, labelsize=16)
+plt.savefig("SHAP_Summary.png", bbox_inches="tight", dpi=600)
+plt.show()
 
 # ======================
 # Mean SHAP bar plot
 # ======================
 mean_abs_shap = np.abs(shap_values).mean(axis=0).flatten()
-
+mean_abs_shap = np.concatenate([mean_abs_shap[1:], mean_abs_shap[:1]])
+feature_names = np.concatenate([feature_names[1:], feature_names[:1]])
 plt.figure(figsize=(9, 7))
 bars = plt.bar(feature_names, mean_abs_shap, color="blue")
 plt.ylabel("Mean SHAP value", fontsize=20)
@@ -57,12 +67,4 @@ plt.ylim([0, 0.1])
 plt.xticks(rotation=45, ha="right")
 plt.tight_layout()
 plt.savefig("SHAP_Bar.png", dpi=600)
-plt.show()
-
-# ======================
-# SHAP summary plot
-# ======================
-plt.figure(figsize=(8, 6))
-shap.summary_plot(shap_values, sample_X, feature_names=feature_names, show=False)
-plt.savefig("SHAP_Summary.png", bbox_inches="tight", dpi=600)
 plt.show()
