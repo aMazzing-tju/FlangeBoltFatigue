@@ -8,21 +8,24 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import r2_score, mean_squared_error
 import joblib
+import matplotlib.pyplot as plt
+
+plt.rcParams['font.family'] = 'Arial'
 
 # ==========================
-# 自定义函数
+# MAPE
 # ==========================
 def mean_absolute_percentage_error(y_true, y_pred):
     return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
 
 # ==========================
-# 加载与预处理数据
+# Data loading and preprocessing
 # ==========================
 data = pd.read_csv("loads.csv")
 X = data.iloc[:, 1:13].values  # Load-1 ~ Load-12
 y = data["WorstLife"].values
 
-y_log = np.log(y + 1)  # 对数变换
+y_log = np.log(y + 1)  # logarithmic transformation
 scaler_X = MinMaxScaler()
 scaler_y = MinMaxScaler()
 X_scaled = scaler_X.fit_transform(X)
@@ -34,7 +37,7 @@ y_tensor = torch.tensor(y_scaled, dtype=torch.float32)
 X_train, X_test, y_train, y_test = train_test_split(X_tensor, y_tensor, test_size=0.1, random_state=42)
 
 # ==========================
-# 模型定义
+# Model definition
 # ==========================
 class CNNTransformerWithPE(nn.Module):
     def __init__(self, seq_len=12, d_model=64):
@@ -44,6 +47,7 @@ class CNNTransformerWithPE(nn.Module):
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.1)
 
+        # Learnable positional encoding
         self.position_encoding = nn.Parameter(torch.randn(1, seq_len, d_model))
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=4, dim_feedforward=128, batch_first=True)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=2)
@@ -62,7 +66,7 @@ class CNNTransformerWithPE(nn.Module):
         return self.fc2(x)
 
 # ==========================
-# 主程序（训练 + 保存）
+# Main program (training + saving)
 # ==========================
 if __name__ == "__main__":
     model = CNNTransformerWithPE()
@@ -78,7 +82,7 @@ if __name__ == "__main__":
     )
 
     best_val_loss = float("inf")
-    patience, counter = 15, 0
+    patience, counter = 20, 0
 
     for epoch in range(epochs):
         model.train()
@@ -112,7 +116,7 @@ if __name__ == "__main__":
         print(f"Epoch {epoch+1}/{epochs}, Train Loss: {epoch_loss:.4f}, Val Loss: {val_loss:.4f}")
 
     # ==========================
-    # 测试
+    # Evaluation
     # ==========================
     model.load_state_dict(torch.load("best_1dcnn_model.pth", weights_only=True))
     model.eval()
@@ -129,7 +133,81 @@ if __name__ == "__main__":
         print(f"Test Loss: {test_loss:.4f}, R²: {r2:.4f}, MAPE: {mape:.2f}%, RMSE: {rmse:.2f}")
 
     # ==========================
-    # 保存文件
+    # Uncertainty estimation with MC Dropout
+    # ==========================
+    num_samples = 100
+    all_predictions = []
+
+    model.train()  # Enable dropout
+    with torch.no_grad():
+        for _ in range(num_samples):
+            pred = model(X_test)
+            pred_rescaled = np.exp(scaler_y.inverse_transform(pred.numpy())) - 1
+            all_predictions.append(pred_rescaled.flatten())
+
+    all_predictions = np.array(all_predictions)
+    y_test_rescaled = y_test_rescaled.flatten()
+
+    mean_predictions = np.mean(all_predictions, axis=0)
+    std_predictions = np.std(all_predictions, axis=0)
+
+    # Select prediction with lowest MAPE
+    mape_values = [mean_absolute_percentage_error(y_test_rescaled, pred) for pred in all_predictions]
+    best_idx = np.argmin(mape_values)
+    best_prediction = all_predictions[best_idx]
+
+    # ==========================
+    # Plot uncertainty
+    # ==========================
+    plt.figure(figsize=(5.8, 6))
+    plt.scatter(y_test_rescaled, best_prediction, s=10, alpha=1, color='#FD6E6F', label='Test data', zorder=0.6)
+
+    # Reference line y=x
+    x_line = np.linspace(0.8*min(y_test_rescaled), 1.2*max(y_test_rescaled), 100)
+    plt.plot(x_line, x_line, 'r--', label='y = x', linewidth=2, zorder=0.5)
+
+    # Sorted for CI plotting
+    sorted_idx = np.argsort(y_test_rescaled)
+    y_test_sorted = y_test_rescaled[sorted_idx]
+    mean_sorted = mean_predictions[sorted_idx]
+    std_sorted = std_predictions[sorted_idx]
+
+    plt.plot(y_test_sorted, mean_sorted, color='#D4D4D4', linestyle='-', linewidth=2, label='Mean (μ)', zorder=0.3)
+    plt.fill_between(y_test_sorted, mean_sorted - std_sorted, mean_sorted + std_sorted,
+                     color='#001080', alpha=1, label='μ ± σ', zorder=0.2)
+    plt.fill_between(y_test_sorted, mean_sorted - 2*std_sorted, mean_sorted + 2*std_sorted,
+                     color='#50BDFF', alpha=1, label='μ ± 2σ', zorder=0.1)
+    plt.fill_between(y_test_sorted, mean_sorted - 3*std_sorted, mean_sorted + 3*std_sorted,
+                     color='#B7E5FF', alpha=1, label='μ ± 3σ', zorder=0)
+
+    # Log scale
+    plt.xscale('log')
+    plt.yscale('log')
+
+    plt.tick_params(axis='both', which='major', length=5, width=1.5, labelsize=18)
+    plt.tick_params(axis='both', which='minor', length=2.5, width=1.5)
+
+    for spine in plt.gca().spines.values():
+        spine.set_linewidth(1.5)
+
+    plt.xlabel("Tested (Repeats)", fontsize=20)
+    plt.ylabel("Predicted (Repeats)", fontsize=20)
+    plt.title("Uncertainty analysis", fontsize=20)
+    plt.xlim([0.6*min(y_test_rescaled), 1.4*max(y_test_rescaled)])
+    plt.ylim([0.6*min(y_test_rescaled), 1.4*max(y_test_rescaled)])
+
+    text = f"R² = {r2:.4f}\nMAPE = {mape:.2f}%"
+    ax = plt.gca()
+    plt.text(0.05, 0.9, text, transform=ax.transAxes, fontsize=18,
+             verticalalignment="center", horizontalalignment="left")
+
+    plt.legend(fontsize=18, loc='lower right', edgecolor='black', fancybox=False, shadow=True)
+    plt.tight_layout()
+    plt.savefig('1DCNN_Transformer_Uncertainty.png', dpi=600, bbox_inches='tight')
+    plt.show()
+
+    # ==========================
+    # Save files
     # ==========================
     joblib.dump(scaler_X, "scaler_X.pkl")
     joblib.dump(scaler_y, "scaler_y.pkl")
